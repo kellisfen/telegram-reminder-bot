@@ -102,26 +102,42 @@ class SheetsClient:
             return False
 
     def find_duplicates(self) -> list[dict]:
-        """Найти дубликаты — все вхождения (и оригинал, и дубли) помечаются флагом"""
+        """Найти дубликаты — проверяет по username, telegram_id и contact (ТЗ п.6)"""
         clients = self.get_all_clients()
         duplicates = []
         seen = {}
 
+        # Собираем все возможные ключи для каждого клиента
         for client in clients:
-            key = client.get("username", "").lower() or client.get("contact", "").lower()
-            if not key:
+            username = client.get("username", "").lower().strip("@")
+            telegram_id = client.get("telegram_id", "").strip()
+            contact = client.get("contact", "").lower().strip()
+
+            # Собираем ключи которые есть у этого клиента
+            keys = []
+            if username:
+                keys.append(("username", username))
+            if telegram_id:
+                keys.append(("telegram_id", telegram_id))
+            if contact:
+                keys.append(("contact", contact))
+
+            if not keys:
                 continue
 
-            if key in seen:
-                duplicates.append({
-                    "username": client.get("username", ""),
-                    "contact": client.get("contact", ""),
-                    "record_id": client.get("record_id", ""),
-                    "is_duplicate": True,
-                    "original_record_id": seen[key]
-                })
-            else:
-                seen[key] = client.get("record_id", "")
+            # Проверяем каждый ключ
+            for key_type, key in keys:
+                if key in seen:
+                    duplicates.append({
+                        "username": client.get("username", ""),
+                        "telegram_id": client.get("telegram_id", ""),
+                        "contact": client.get("contact", ""),
+                        "record_id": client.get("record_id", ""),
+                        "is_duplicate": True,
+                        "original_record_id": seen[key]
+                    })
+                else:
+                    seen[key] = client.get("record_id", "")
 
         # Отмечаем ВСЕ вхождения (оригинал + дубли) в таблице
         if duplicates:
@@ -133,10 +149,13 @@ class SheetsClient:
         """Ставит флаг во всех вхождениях — и оригинал, и дубли"""
         # Собираем все record_id которые участвуют в дублях
         all_dup_record_ids = set()
+        # record_id → original_record_id для комментария
+        dup_comment_map = {}
         for d in duplicates:
             all_dup_record_ids.add(d["record_id"])
             if d.get("original_record_id"):
                 all_dup_record_ids.add(d["original_record_id"])
+                dup_comment_map[d["record_id"]] = d["original_record_id"]
 
         rows_to_update = []
         for i, client in enumerate(clients, self._sheet_start_row()):
@@ -146,11 +165,19 @@ class SheetsClient:
         if not rows_to_update:
             return
 
+        # Строим map record_id → comment
+        dup_comment_map = {}
+        for d in duplicates:
+            dup_comment_map[d["record_id"]] = d.get("original_record_id", "Требует проверки")
+
         data = []
         for row_num in rows_to_update:
+            # record_id для этой строки
+            record_id = clients[row_num - self._sheet_start_row()].get("record_id", "")
+            comment = dup_comment_map.get(record_id, "Требует проверки")
             data.append({
                 "range": f"Sheet1!L{row_num}:M{row_num}",
-                "values": [["да", "Требует проверки"]]
+                "values": [["да", f"Дубль, ср. {comment}"]]
             })
 
         try:

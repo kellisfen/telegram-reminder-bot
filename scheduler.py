@@ -132,7 +132,7 @@ class ReminderScheduler:
                         spreadsheetId=self.sheets_client.spreadsheet_id,
                         range=f"Sheet1!K{i}",
                         valueInputOption="RAW",
-                        body={"values": [["напомнено"]]}
+                        body={"values": [["напоминание отправлено"]]}
                     ).execute()
                     break
         except Exception as e:
