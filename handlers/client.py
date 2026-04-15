@@ -1,12 +1,106 @@
 """
-Клиентские обработчики — добавление клиента
+Клиентские обработчики — добавление клиента, /start
 """
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from datetime import datetime
 
 from config import config, sheets_cfg
 from handlers.states import BotStates
+
+
+async def on_client_start(message: Message, state: FSMContext, **kwargs):
+    """
+    Клиент нажал /start.
+    Регистрируем что клиент запускал бота (для логики напоминаний).
+    """
+    user = message.from_user
+    client_state_db = kwargs.get("client_state_db")
+    sheets_client = kwargs.get("sheets_client")
+
+    if not client_state_db:
+        await message.answer("⚠️ Сервис временно недоступен.")
+        return
+
+    # Отмечаем что клиент запускал бота
+    client_state_db.mark_started(str(user.id))
+    username = f"@{user.username}" if user.username else ""
+
+    # Проверяем есть ли запись с таким username в Sheets
+    found_record = None
+    if sheets_client:
+        clients = sheets_client.get_all_clients()
+        for c in clients:
+            if c.get("username", "").lower().strip("@") == username.lower().strip("@"):
+                found_record = c
+                break
+
+    if found_record:
+        # Нашли существующую запись — предлагаем привязаться
+        await state.update_data(found_record_id=found_record.get("record_id"))
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Да, это я", callback_data="client_link_yes"),
+            InlineKeyboardButton(text="❌ Нет, создать новую", callback_data="client_link_no"),
+        ]])
+        await message.answer(
+            f"👋 Привет, {username}!\n\n"
+            f"Мы нашли твою запись в базе:\n"
+            f"📋 ID: {found_record.get('record_id', '—')}\n"
+            f"📅 Договор: {found_record.get('contract_start', '—')} — {found_record.get('contract_end', '—')}\n\n"
+            f"Хочешь привязать свой Telegram ID к этой записи?",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+    else:
+        # Новый клиент
+        kb = ReplyKeyboardMarkup(keyboard=[
+            [KeyboardButton(text="📝 Добавить клиента")],
+        ], resize_keyboard=True)
+        await message.answer(
+            f"👋 Привет, {username}!\n\n"
+            f"Ты зарегистрирован в системе.\n"
+            f"Когда подойдёт срок окончания твоего договора — мы напомним! 📅",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+
+    await state.clear()
+
+
+async def client_link_yes(callback: CallbackQuery, state: FSMContext, **kwargs):
+    """Клиент подтвердил привязку к существующей записи"""
+    user = callback.from_user
+    data = await state.get_data()
+    record_id = data.get("found_record_id")
+    client_state_db = kwargs.get("client_state_db")
+    sheets_client = kwargs.get("sheets_client")
+
+    # Отмечаем в SQLite
+    if client_state_db:
+        client_state_db.mark_started(str(user.id))
+
+    # Обновляем Telegram ID в Sheets
+    if sheets_client and record_id:
+        sheets_client.update_client_field(record_id, "telegram_id", str(user.id))
+        sheets_client.update_client_field(record_id, "status", "активен")
+
+    await callback.message.edit_text(
+        f"✅ Готово! Ты привязан к записи {record_id}.\n"
+        f"Теперь будешь получать напоминания!"
+    )
+    await callback.answer()
+
+
+async def client_link_no(callback: CallbackQuery, state: FSMContext, **kwargs):
+    """Клиент отказался — предлагаем создать новую запись"""
+    kb = ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="📝 Добавить клиента")],
+    ], resize_keyboard=True)
+    await callback.message.edit_text(
+        "Ок! Если захочешь добавить себя — нажми кнопку ниже.",
+        reply_markup=kb
+    )
+    await callback.answer()
 
 
 async def add_client_flow_start(message: Message, state: FSMContext, **kwargs):
@@ -25,7 +119,6 @@ async def add_contract_start(message: Message, state: FSMContext, **kwargs):
     """Получена дата начала договора"""
     text = message.text.strip()
 
-    # Парсим дату
     try:
         date = datetime.strptime(text, "%d.%m.%Y")
     except ValueError:
@@ -73,7 +166,7 @@ async def add_contact(message: Message, state: FSMContext, **kwargs):
     client_record = {
         "record_id": f"CL-{datetime.now().strftime('%Y%m%d%H%M%S')}",
         "created_at": datetime.now().strftime("%d.%m.%Y"),
-        "created_by": data["created_by"],  # admin или client
+        "created_by": data["created_by"],
         "username": username,
         "telegram_id": telegram_id,
         "contact": contact,
@@ -86,20 +179,20 @@ async def add_contact(message: Message, state: FSMContext, **kwargs):
         "dup_comment": "",
     }
 
-    # Сохраняем в Sheets
     sheets_client = kwargs.get("sheets_client")
+    client_state_db = kwargs.get("client_state_db")
+
     if sheets_client:
         try:
             sheets_client.add_client(client_record)
-            # Отмечаем что клиент запускал бота
-            client_state_db = kwargs.get("client_state_db")
             if client_state_db and data["created_by"] == "client":
                 client_state_db.mark_started(telegram_id)
         except Exception as e:
-            await message.answer(f"⚠️ Запись создана локально, но не сохранена в Sheets: {e}")
-            # Тут можно сохранить локально
+            await message.answer(f"⚠️ Запись создана, но не сохранена в Sheets: {e}")
+            return
     else:
         await message.answer("⚠️ Sheets не настроен. Запись не сохранена.")
+        return
 
     await state.clear()
 

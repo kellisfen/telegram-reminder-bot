@@ -157,3 +157,30 @@ class SheetsClient:
             log.info(f"Marked {len(rows_to_update)} duplicates")
         except HttpError as e:
             log.error(f"Failed to mark duplicates: {e}")
+
+    def update_client_field(self, record_id: str, field: str, value: str) -> bool:
+        """Обновляет одно поле записи по record_id"""
+        try:
+            clients = self.get_all_clients()
+            for i, client in enumerate(clients, self._sheet_start_row()):
+                if client.get("record_id") == record_id:
+                    col_letter = self._col_index_to_letter(getattr(sheets_cfg, f"col_{field}" if hasattr(sheets_cfg, f"col_{field}") else f"col_{field}"))
+                    self.service.spreadsheets().values().update(
+                        spreadsheetId=self.spreadsheet_id,
+                        range=f"Sheet1!{col_letter}{i}",
+                        valueInputOption="RAW",
+                        body={"values": [[value]]}
+                    ).execute()
+                    return True
+            return False
+        except Exception as e:
+            log.error(f"Failed to update field: {e}")
+            return False
+
+    def _sheet_start_row(self) -> int:
+        """Номер первой строки с данными"""
+        return sheets_cfg.header_row + 1
+
+    def _col_index_to_letter(self, col_index: int) -> str:
+        """Конвертирует номер колонки (0-based) в букву (A=0 → A, B=1 → B)"""
+        return chr(ord("A") + col_index)
