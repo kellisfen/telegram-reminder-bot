@@ -1,0 +1,17 @@
+# Core
+aiogram>=3.13.0
+python-dotenv>=1.0.0
+
+# Google Sheets
+google-api-python-client>=2.100.0
+google-auth>=2.27.0
+
+# Scheduler
+APScheduler>=3.10.0
+
+# Date handling
+python-dateutil>=2.8.0
+
+# Development
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
