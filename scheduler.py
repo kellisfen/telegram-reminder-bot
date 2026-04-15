@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from config import config
+from config import config, sheets_cfg
 from sheets.client import SheetsClient
 from db.state import ClientStateDB
 
@@ -125,7 +125,7 @@ class ReminderScheduler:
         try:
             # Простой поиск по record_id
             clients = self.sheets_client.get_all_clients()
-            for i, c in enumerate(clients, config.sheets_cfg.header_row + 1):
+            for i, c in enumerate(clients, sheets_cfg.header_row + 1):
                 if c.get("record_id") == client.get("record_id"):
                     # Обновляем статус на "напомнено"
                     self.sheets_client.service.spreadsheets().values().update(

@@ -200,7 +200,8 @@ async def link_do_callback(callback: CallbackQuery, state: FSMContext, **kwargs)
         await callback.message.answer("❌ Sheets не настроен.")
         return
 
-    # Обновляем запись в Sheets — оставляем username но теперь он "подтверждён"
+    # Пишем telegram_id (username-строка) и статус
+    sheets_client.update_client_field(record_id, "telegram_id", username)
     success = sheets_client.update_client_field(record_id, "status", "активен")
     if success:
         await callback.message.answer(
@@ -237,7 +238,8 @@ async def link_select_callback(callback: CallbackQuery, state: FSMContext, **kwa
         await callback.message.answer("❌ Sheets не настроен.")
         return
 
-    # Обновляем статус
+    # Пишем telegram_id и статус
+    sheets_client.update_client_field(record_id, "telegram_id", username)
     success = sheets_client.update_client_field(record_id, "status", "активен")
     if success:
         await callback.message.answer(

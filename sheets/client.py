@@ -102,7 +102,7 @@ class SheetsClient:
             return False
 
     def find_duplicates(self) -> list[dict]:
-        """Найти дубликаты — проверяет похожие username/contact"""
+        """Найти дубликаты — все вхождения (и оригинал, и дубли) помечаются флагом"""
         clients = self.get_all_clients()
         duplicates = []
         seen = {}
@@ -116,32 +116,36 @@ class SheetsClient:
                 duplicates.append({
                     "username": client.get("username", ""),
                     "contact": client.get("contact", ""),
-                    "comment": f"Похож на {seen[key]}"
+                    "record_id": client.get("record_id", ""),
+                    "is_duplicate": True,
+                    "original_record_id": seen[key]
                 })
             else:
-                seen[key] = client.get("username", "") or client.get("contact", "")
+                seen[key] = client.get("record_id", "")
 
-        # Отмечаем дубли в таблице
+        # Отмечаем ВСЕ вхождения (оригинал + дубли) в таблице
         if duplicates:
-            self._mark_duplicates(clients, duplicates)
+            self._mark_duplicates(clients, duplicates, seen)
 
         return duplicates
 
-    def _mark_duplicates(self, clients: list, duplicates: list):
-        """Ставит флаг дубля в найденных строках"""
-        dup_usernames = {d["username"].lower() for d in duplicates}
-        dup_contacts = {d["contact"].lower() for d in duplicates}
+    def _mark_duplicates(self, clients: list, duplicates: list, seen: dict):
+        """Ставит флаг во всех вхождениях — и оригинал, и дубли"""
+        # Собираем все record_id которые участвуют в дублях
+        all_dup_record_ids = set()
+        for d in duplicates:
+            all_dup_record_ids.add(d["record_id"])
+            if d.get("original_record_id"):
+                all_dup_record_ids.add(d["original_record_id"])
 
         rows_to_update = []
-        for i, client in enumerate(clients, sheets_cfg.header_row + 1):
-            key = client.get("username", "").lower() or client.get("contact", "").lower()
-            if key in dup_usernames or key in dup_contacts:
+        for i, client in enumerate(clients, self._sheet_start_row()):
+            if client.get("record_id", "") in all_dup_record_ids:
                 rows_to_update.append(i)
 
         if not rows_to_update:
             return
 
-        # Формируем batch update
         data = []
         for row_num in rows_to_update:
             data.append({
@@ -152,9 +156,9 @@ class SheetsClient:
         try:
             self.service.spreadsheets().values().batchUpdate(
                 spreadsheetId=self.spreadsheet_id,
-                body={"data": data, "valueInputOption": "RAW"}
+                body={"valueRanges": data, "valueInputOption": "RAW"}
             ).execute()
-            log.info(f"Marked {len(rows_to_update)} duplicates")
+            log.info(f"Marked {len(rows_to_update)} duplicate rows")
         except HttpError as e:
             log.error(f"Failed to mark duplicates: {e}")
 
