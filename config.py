@@ -24,8 +24,8 @@ class BotConfig:
         self.admin_ids = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x]
         self.spreadsheet_id = os.getenv("SPREADSHEET_ID", "")
         self.credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-        self.reminder_days_before = int(os.getenv("REMINDER_DAYS_BEFORE", "60"))
-        self.check_interval_hours = int(os.getenv("CHECK_INTERVAL_HOURS", "1"))
+        self.reminder_days_before = max(1, int(os.getenv("REMINDER_DAYS_BEFORE", "60")))
+        self.check_interval_hours = max(1, int(os.getenv("CHECK_INTERVAL_HOURS", "1")))
 
 
 @dataclass

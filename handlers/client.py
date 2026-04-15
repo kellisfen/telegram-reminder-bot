@@ -1,70 +1,13 @@
 """
-Клиентские обработчики — добавление клиента, /start
+Клиентские обработчики — добавление клиента
 """
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from datetime import datetime
+import secrets
 
 from config import config, sheets_cfg
 from handlers.states import BotStates
-
-
-async def on_client_start(message: Message, state: FSMContext, **kwargs):
-    """
-    Клиент нажал /start.
-    Регистрируем что клиент запускал бота (для логики напоминаний).
-    """
-    user = message.from_user
-    client_state_db = kwargs.get("client_state_db")
-    sheets_client = kwargs.get("sheets_client")
-
-    if not client_state_db:
-        await message.answer("⚠️ Сервис временно недоступен.")
-        return
-
-    # Отмечаем что клиент запускал бота
-    client_state_db.mark_started(str(user.id))
-    username = f"@{user.username}" if user.username else ""
-
-    # Проверяем есть ли запись с таким username в Sheets
-    found_record = None
-    if sheets_client:
-        clients = sheets_client.get_all_clients()
-        for c in clients:
-            if c.get("username", "").lower().strip("@") == username.lower().strip("@"):
-                found_record = c
-                break
-
-    if found_record:
-        # Нашли существующую запись — предлагаем привязаться
-        await state.update_data(found_record_id=found_record.get("record_id"))
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Да, это я", callback_data="client_link_yes"),
-            InlineKeyboardButton(text="❌ Нет, создать новую", callback_data="client_link_no"),
-        ]])
-        await message.answer(
-            f"👋 Привет, {username}!\n\n"
-            f"Мы нашли твою запись в базе:\n"
-            f"📋 ID: {found_record.get('record_id', '—')}\n"
-            f"📅 Договор: {found_record.get('contract_start', '—')} — {found_record.get('contract_end', '—')}\n\n"
-            f"Хочешь привязать свой Telegram ID к этой записи?",
-            parse_mode="HTML",
-            reply_markup=kb
-        )
-    else:
-        # Новый клиент
-        kb = ReplyKeyboardMarkup(keyboard=[
-            [KeyboardButton(text="📝 Добавить клиента")],
-        ], resize_keyboard=True)
-        await message.answer(
-            f"👋 Привет, {username}!\n\n"
-            f"Ты зарегистрирован в системе.\n"
-            f"Когда подойдёт срок окончания твоего договора — мы напомним! 📅",
-            parse_mode="HTML",
-            reply_markup=kb
-        )
-
-    await state.clear()
 
 
 async def client_link_yes(callback: CallbackQuery, state: FSMContext, **kwargs):
@@ -164,7 +107,7 @@ async def add_contact(message: Message, state: FSMContext, **kwargs):
     reminder_date = end_date - relativedelta(days=config.reminder_days_before)
 
     client_record = {
-        "record_id": f"CL-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+        "record_id": f"CL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(2)}",
         "created_at": datetime.now().strftime("%d.%m.%Y"),
         "created_by": data["created_by"],
         "username": username,
